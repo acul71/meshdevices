@@ -1,0 +1,19 @@
+# Copy to e.g. config.toml and pass: meshdevices --config config.toml
+# Optional: identity_key_file = "identity/node.key"  # stable PeerId (see docs/network-test.md)
+
+lm_studio_base = "http://127.0.0.1:1234"
+# Optional: default OpenAI model id for `lm-chat` JSON (override with `meshdevices lm-chat --model`)
+# lm_studio_model = "qwen/qwen3.5-9b"
+
+# Libp2p PeerIds (base58) allowed to use the LM proxy stream
+allow_peer_ids = [
+  # "12D3KooWExamplePeerIdHere",
+]
+
+# Optional: map same base58 PeerId -> iroh NodeTicket string for reliable dials
+[peer_tickets]
+# "12D3KooWExamplePeerIdHere" = "n1abc...ticket..."
+
+bootstrap = []
+gossip_topic = "meshdevices/v1"
+dht_mode = "server" # or "client"

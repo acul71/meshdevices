@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meshdevices"
+version = "0.1.0"
+description = "Mesh Devices MVP: iroh transport + py-libp2p (DHT, GossipSub) with LM Studio proxy"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "libp2p",
+    "iroh",
+    "multiaddr",
+    "trio",
+    "trio-asyncio>=0.15",
+    "httpx",
+    "tomli>=2.0.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-trio", "ruff"]
+
+[project.scripts]
+meshdevices = "meshdevices.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

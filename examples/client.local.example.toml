@@ -1,0 +1,13 @@
+# Phase-1 client: copy to client.toml; set bootstrap + [peer_tickets] from server logs.
+identity_key_file = "identity/client.key"
+
+lm_studio_base = "http://127.0.0.1:1234"
+# Default model for lm-chat when not passing --model (LM Studio model id from /v1/models)
+# lm_studio_model = "qwen/qwen3.5-9b"
+allow_peer_ids = []
+gossip_topic = "meshdevices/v1"
+dht_mode = "client"
+
+bootstrap = []
+
+[peer_tickets]

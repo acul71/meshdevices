@@ -1,0 +1,12 @@
+# Phase-1 server: set allow_peer_ids after client runs once.
+# Creates identity/server.key next to this file on first run (stable PeerId).
+identity_key_file = "identity/server.key"
+
+lm_studio_base = "http://127.0.0.1:1234"
+allow_peer_ids = [
+  # Add client libp2p PeerId (base58) from client terminal logs after first run.
+]
+peer_tickets = {}
+bootstrap = []
+gossip_topic = "meshdevices/v1"
+dht_mode = "server"

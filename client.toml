@@ -1,0 +1,13 @@
+identity_key_file = "identity/client.key"
+
+lm_studio_base = "http://127.0.0.1:1234"
+allow_peer_ids = []
+gossip_topic = "meshdevices/v1"
+dht_mode = "client"
+
+bootstrap = [
+  "/p2p/12D3KooWBUJtKAQZstNfVtfDPnbAoXXCWJv4iqEwzu5bT5V8DY4P",
+]
+
+[peer_tickets]
+"12D3KooWBUJtKAQZstNfVtfDPnbAoXXCWJv4iqEwzu5bT5V8DY4P" = "nodeaamjic4vpub366r7rdocbihvkv7x2rtep4tsxtcxkwx4d4qi2rlpaajdnb2hi4dthixs6zlvo4ys2mjoojswyylzfzuxe33ifzxgk5dxn5zgwlrpauaauaaaahonkayaluywff4mwebaaxjrmkl5zvidadakqair3tkqgagavb5adxgvam"

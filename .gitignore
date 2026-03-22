@@ -1,0 +1,11 @@
+# Local dev keys (never commit)
+identity/
+*.key
+
+.venv/
+logs/
+
+**/__pycache__/
+*.py[cod]
+**/*.egg-info/
+.pytest_cache/
