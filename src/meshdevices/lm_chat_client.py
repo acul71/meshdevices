@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import trio
 from libp2p import generate_new_ed25519_identity
 from libp2p.host.basic_host import BasicHost
+from libp2p.network.stream.exceptions import StreamReset
 from libp2p.peer.id import ID
 from libp2p.tools.utils import info_from_p2p_addr
 from multiaddr import Multiaddr
@@ -27,6 +28,28 @@ if TYPE_CHECKING:
     from meshdevices.config import MeshConfig
 
 logger = logging.getLogger(__name__)
+
+# py-libp2p + iroh: full `NetStream.close()` can block a long time after reads complete
+# (QUIC half-close / swarm notify). Response bytes are already buffered; do not hold the CLI.
+_CLOSE_STREAM_BUDGET_S = 15.0
+_RESET_STREAM_BUDGET_S = 5.0
+
+
+async def _close_lm_proxy_stream(stream) -> None:
+    with trio.move_on_after(_CLOSE_STREAM_BUDGET_S) as scope:
+        await stream.close()
+    if scope.cancelled_caught:
+        logger.warning(
+            "lm-chat: stream.close() exceeded %.0fs; resetting stream",
+            _CLOSE_STREAM_BUDGET_S,
+        )
+        with trio.move_on_after(_RESET_STREAM_BUDGET_S) as scope2:
+            await stream.reset()
+        if scope2.cancelled_caught:
+            logger.warning(
+                "lm-chat: stream.reset() also exceeded %.0fs; continuing",
+                _RESET_STREAM_BUDGET_S,
+            )
 
 
 def peer_id_from_base58_cli(peer_b58: str) -> ID:
@@ -96,9 +119,21 @@ async def run_lm_chat(
                 await connect_to_bootstrap_peers(host, cfg.bootstrap)
 
             info = info_from_p2p_addr(Multiaddr(f"/p2p/{peer_b58}"))
+            logger.debug("lm-chat: dialing / ensuring connection to %s", peer_b58)
             await host.connect(info)
+            logger.debug("lm-chat: opening LM proxy stream")
             stream = await host.new_stream(peer_id, [LM_PROXY_PROTOCOL])
-            await stream.write(request_body)
+            logger.debug("lm-chat: sending request (%d bytes)", len(request_body))
+            try:
+                await stream.write(request_body)
+            except StreamReset as e:
+                raise RuntimeError(
+                    "LM proxy stream was reset by the server before the request was sent. "
+                    "If the server uses allow_peer_ids, add this node's PeerId (from "
+                    "`print-ticket` / identity) to the server's allow_peer_ids, or use an "
+                    "empty allow_peer_ids list to allow any peer for local testing."
+                ) from e
             response = await stream.read(MAX_REQUEST_BYTES)
-            await stream.close()
+            await _close_lm_proxy_stream(stream)
+            logger.info("lm-chat: received %d bytes from LM proxy", len(response))
             return response

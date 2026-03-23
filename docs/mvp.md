@@ -4,7 +4,7 @@
 
 - **Wire:** [iroh](https://github.com/n0-computer/iroh) (Python bindings) provides QUIC, relays, and NAT traversal.
 - **libp2p:** [py-libp2p](https://github.com/libp2p/py-libp2p) runs **Noise**, **yamux**, **GossipSub**, **Kademlia DHT**, and the **LM Studio proxy** stream protocol on top of a custom [`IrohTransport`](../src/meshdevices/transport/iroh_transport.py).
-- **Allowlist:** Only configured **PeerIds** may use the LM proxy stream. When `allow_peer_ids` is non-empty, **GossipSub** messages on `gossip_topic` are rejected unless the sender is allowlisted ([`gossip_allowlist.py`](../src/meshdevices/gossip_allowlist.py) via `Pubsub.set_topic_validator`). See [`allowlist.example.toml`](../examples/allowlist.example.toml).
+- **Allowlist:** When `allow_peer_ids` is **empty**, any peer may use the LM proxy stream (open for local dev). When **non-empty**, only listed **PeerIds** may use the LM proxy; **GossipSub** messages on `gossip_topic` are rejected unless the sender is allowlisted ([`gossip_allowlist.py`](../src/meshdevices/gossip_allowlist.py) via `Pubsub.set_topic_validator`). See [`allowlist.example.toml`](../examples/allowlist.example.toml).
 - **Orchestration:** **Kademlia DHT** (`KadDHT`) and **GossipSub** + **Pubsub** run on the same `BasicHost` as in py-libp2p examples ([`node.py`](../src/meshdevices/node.py)).
 
 ## Concurrency: trio only (application code)

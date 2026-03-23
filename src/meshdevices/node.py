@@ -53,7 +53,12 @@ async def mesh_run_forever(cfg: MeshConfig, *, key_pair: KeyPair | None = None) 
 
         mode = DHTMode.SERVER if cfg.dht_mode == "server" else DHTMode.CLIENT
         dht = KadDHT(host, mode)
-        allow = PeerAllowlist.from_strings(cfg.allow_peer_ids)
+        # Empty allow_peer_ids → no LM proxy restriction (matches gossip: no validator when empty).
+        allow = (
+            PeerAllowlist.from_strings(cfg.allow_peer_ids)
+            if cfg.allow_peer_ids
+            else None
+        )
         register_lm_proxy_handler(host, lm_base=cfg.lm_studio_base, allowlist=allow)
 
         gossipsub = GossipSub(
