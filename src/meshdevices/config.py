@@ -12,7 +12,7 @@ else:
     import tomli as tomllib
 
 # Default OpenAI-style `model` id in generated lm-chat JSON when config does not set one.
-DEFAULT_LM_STUDIO_MODEL = "local-model"
+DEFAULT_LM_STUDIO_MODEL = "qwen/qwen3.5-9b"
 
 
 @dataclass

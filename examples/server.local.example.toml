@@ -6,7 +6,11 @@ lm_studio_base = "http://127.0.0.1:1234"
 allow_peer_ids = [
   # Add client libp2p PeerId (base58) from client terminal logs after first run.
 ]
-peer_tickets = {}
 bootstrap = []
 gossip_topic = "meshdevices/v1"
 dht_mode = "server"
+
+# When the client also runs `serve`, add the client's NodeTicket so the server can
+# dial the client for GossipSub/DHT (see docs/network-test.md).
+[peer_tickets]
+# "12D3KooW...CLIENT..." = "nodea...."

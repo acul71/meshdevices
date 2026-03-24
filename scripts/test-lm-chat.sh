@@ -19,7 +19,7 @@ PYTHON="${PYTHON:-python3}"
 CONFIG="${CONFIG:-client.toml}"
 PEER="${PEER:-}"
 PROMPT="${PROMPT:-Say hello in one short sentence.}"
-MODEL="${MODEL:-}"
+MODEL="${MODEL:-nvidia/nemotron-3-nano-4b}"
 
 usage() {
   sed -n '1,20p' "$0" | tail -n +2
@@ -69,12 +69,9 @@ if ! "$PYTHON" -m meshdevices --help >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "lm-chat: config=$CONFIG peer=$PEER model=${MODEL:-<config default>}"
+echo "lm-chat: config=$CONFIG peer=$PEER model=$MODEL"
 echo "---"
-extra=()
-if [[ -n "$MODEL" ]]; then
-  extra+=(--model "$MODEL")
-fi
+extra=(--model "$MODEL")
 "$PYTHON" -m meshdevices --config "$CONFIG" lm-chat --peer "$PEER" --prompt "$PROMPT" "${extra[@]}"
 ec=$?
 echo "---"

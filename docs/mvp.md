@@ -41,4 +41,4 @@ The node listens with an **empty** `Multiaddr("")` (same idea as rust-libp2p-iro
 
 - Protocol ID: `/meshdevices/lm-proxy/1.0.0`
 - MVP payload: JSON body for `POST .../v1/chat/completions` (forwarded to `lm_studio_base`).
-- Default chat JSON uses `model` from config `lm_studio_model`, or `meshdevices lm-chat --model …`, or the fallback `local-model` (see `DEFAULT_LM_STUDIO_MODEL` in [`config.py`](../src/meshdevices/config.py)).
+- Default chat JSON uses `model` from config `lm_studio_model`, or `meshdevices lm-chat --model …`, or the fallback `qwen/qwen3.5-9b` (see `DEFAULT_LM_STUDIO_MODEL` in [`config.py`](../src/meshdevices/config.py)); override if your LM Studio uses different model ids.

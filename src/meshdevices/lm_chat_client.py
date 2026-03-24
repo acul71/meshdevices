@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import trio
 from libp2p import generate_new_ed25519_identity
 from libp2p.host.basic_host import BasicHost
-from libp2p.network.stream.exceptions import StreamReset
+from libp2p.network.stream.exceptions import StreamEOF, StreamReset
 from libp2p.peer.id import ID
 from libp2p.tools.utils import info_from_p2p_addr
 from multiaddr import Multiaddr
@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 # (QUIC half-close / swarm notify). Response bytes are already buffered; do not hold the CLI.
 _CLOSE_STREAM_BUDGET_S = 15.0
 _RESET_STREAM_BUDGET_S = 5.0
+# Allow long model generation before first byte (reasoning models can take a while).
+_FIRST_RESPONSE_BYTE_BUDGET_S = 600.0
+# Some yamux paths can delay/lose EOF delivery even after payload bytes arrived.
+# Once payload has started, stop waiting forever for a perfect half-close.
+_READ_IDLE_BUDGET_S = 3.0
 
 
 async def _close_lm_proxy_stream(stream) -> None:
@@ -115,25 +120,66 @@ async def run_lm_chat(
 
         async with host.run(listen_addrs=listen_maddrs), trio.open_nursery() as nursery:
             nursery.start_soon(host.get_peerstore().start_cleanup_task, 60)
-            if cfg.bootstrap:
-                await connect_to_bootstrap_peers(host, cfg.bootstrap)
-
-            info = info_from_p2p_addr(Multiaddr(f"/p2p/{peer_b58}"))
-            logger.debug("lm-chat: dialing / ensuring connection to %s", peer_b58)
-            await host.connect(info)
-            logger.debug("lm-chat: opening LM proxy stream")
-            stream = await host.new_stream(peer_id, [LM_PROXY_PROTOCOL])
-            logger.debug("lm-chat: sending request (%d bytes)", len(request_body))
             try:
-                await stream.write(request_body)
-            except StreamReset as e:
-                raise RuntimeError(
-                    "LM proxy stream was reset by the server before the request was sent. "
-                    "If the server uses allow_peer_ids, add this node's PeerId (from "
-                    "`print-ticket` / identity) to the server's allow_peer_ids, or use an "
-                    "empty allow_peer_ids list to allow any peer for local testing."
-                ) from e
-            response = await stream.read(MAX_REQUEST_BYTES)
-            await _close_lm_proxy_stream(stream)
-            logger.info("lm-chat: received %d bytes from LM proxy", len(response))
-            return response
+                if cfg.bootstrap:
+                    await connect_to_bootstrap_peers(host, cfg.bootstrap)
+
+                info = info_from_p2p_addr(Multiaddr(f"/p2p/{peer_b58}"))
+                logger.debug("lm-chat: dialing / ensuring connection to %s", peer_b58)
+                await host.connect(info)
+                logger.debug("lm-chat: opening LM proxy stream")
+                stream = await host.new_stream(peer_id, [LM_PROXY_PROTOCOL])
+                logger.debug("lm-chat: sending request (%d bytes)", len(request_body))
+                try:
+                    await stream.write(request_body)
+                except StreamReset as e:
+                    raise RuntimeError(
+                        "LM proxy stream was reset by the server before the request was sent. "
+                        "If the server uses allow_peer_ids, add this node's PeerId (from "
+                        "`print-ticket` / identity) to the server's allow_peer_ids, or use an "
+                        "empty allow_peer_ids list to allow any peer for local testing."
+                    ) from e
+                # Read response chunks. Prefer EOF, but do not block forever waiting for it:
+                # in some yamux/QUIC paths payload bytes arrive while EOF is delayed.
+                parts: list[bytes] = []
+                while True:
+                    timed_out = False
+                    budget_s = _FIRST_RESPONSE_BYTE_BUDGET_S if not parts else _READ_IDLE_BUDGET_S
+                    with trio.move_on_after(budget_s) as read_scope:
+                        try:
+                            chunk = await stream.read(MAX_REQUEST_BYTES)
+                        except StreamEOF:
+                            break
+                    if read_scope.cancelled_caught:
+                        timed_out = True
+                        chunk = b""
+                    if timed_out and parts:
+                        logger.debug(
+                            "lm-chat: no new bytes for %.1fs after payload; proceeding without EOF",
+                            _READ_IDLE_BUDGET_S,
+                        )
+                        break
+                    if timed_out and not parts:
+                        raise RuntimeError(
+                            "Timed out waiting for first response bytes from LM proxy. "
+                            "The server accepted the request but no payload arrived in time."
+                        )
+                    if not chunk:
+                        if parts:
+                            break
+                        # Before first byte, tolerate transient empty reads.
+                        await trio.sleep(0.05)
+                        continue
+                    parts.append(chunk)
+                    logger.debug(
+                        "lm-chat: read chunk %d bytes (total %d)",
+                        len(chunk),
+                        sum(len(p) for p in parts),
+                    )
+                response = b"".join(parts)
+                await _close_lm_proxy_stream(stream)
+                logger.info("lm-chat: received %d bytes from LM proxy", len(response))
+                return response
+            finally:
+                # start_cleanup_task is long-lived; cancel it so lm-chat can exit.
+                nursery.cancel_scope.cancel()

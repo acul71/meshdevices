@@ -6,10 +6,12 @@ MVP: read request up to `max_request`, forward with httpx, write response.
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import TYPE_CHECKING
 
 import httpx
+import trio
 
 from libp2p.abc import INetStream
 from libp2p.custom_types import TProtocol
@@ -21,6 +23,19 @@ logger = logging.getLogger(__name__)
 
 LM_PROXY_PROTOCOL = TProtocol("/meshdevices/lm-proxy/1.0.0")
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
+# Chunk outbound response bodies so yamux/QUIC flow control can make progress vs one huge write.
+_RESPONSE_WRITE_CHUNK = 32 * 1024
+
+
+def _post_chat_completions_sync(url: str, content: bytes) -> tuple[int, bytes]:
+    """Blocking LM Studio POST (runs in a worker thread)."""
+    with httpx.Client(timeout=600.0) as client:
+        r = client.post(
+            url,
+            content=content,
+            headers={"Content-Type": "application/json"},
+        )
+        return r.status_code, r.content
 
 
 async def handle_lm_proxy_stream(
@@ -46,23 +61,49 @@ async def handle_lm_proxy_stream(
         await stream.close()
         return
 
+    logger.info(
+        "lm proxy: read %d-byte request, forwarding to %s/v1/chat/completions",
+        len(req_bytes),
+        lm_base.rstrip("/"),
+    )
     base = lm_base.rstrip("/")
-    async with httpx.AsyncClient(timeout=600.0) as client:
-        try:
-            resp = await client.post(
-                f"{base}/v1/chat/completions",
-                content=req_bytes,
-                headers={"Content-Type": "application/json"},
-            )
-        except Exception as e:
-            err = f"HTTP error: {e}\n".encode()
-            await stream.write(err)
-            await stream.close()
-            return
-
+    url = f"{base}/v1/chat/completions"
+    # Inbound libp2p runs under trio_asyncio (asyncio-driven). httpx.AsyncClient there
+    # often follows asyncio and can starve trio: yamux/QUIC make no progress while LM
+    # Studio works, so the client never sees bytes. Sync httpx in to_thread keeps trio free.
     try:
-        await stream.write(resp.content)
+        status_code, body = await trio.to_thread.run_sync(
+            functools.partial(_post_chat_completions_sync, url, req_bytes),
+        )
+    except Exception as e:
+        logger.error("lm proxy: httpx POST failed: %s", e)
+        err = f"HTTP error: {e}\n".encode()
+        await stream.write(err)
+        await stream.close()
+        return
+
+    logger.info(
+        "lm proxy: LM Studio HTTP %s response body %d bytes",
+        status_code,
+        len(body),
+    )
+    try:
+        if len(body) <= _RESPONSE_WRITE_CHUNK:
+            await stream.write(body)
+            await trio.sleep(0)
+        else:
+            for i in range(0, len(body), _RESPONSE_WRITE_CHUNK):
+                chunk = body[i : i + _RESPONSE_WRITE_CHUNK]
+                await stream.write(chunk)
+                await trio.sleep(0)
+                logger.debug(
+                    "lm proxy: wrote chunk %d..%d (%d bytes)",
+                    i,
+                    min(i + _RESPONSE_WRITE_CHUNK, len(body)),
+                    len(chunk),
+                )
     finally:
+        logger.debug("lm proxy: closing stream after response")
         await stream.close()
 
 

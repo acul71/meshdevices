@@ -24,6 +24,17 @@ identity_key_file = "identity/client.key"   # client
 
 On first run the file is created (32-byte Ed25519 seed, `0600`). **PeerId stays the same** across restarts. The **iroh NodeTicket** string may still change when network paths change; if the client cannot dial, refresh `[peer_tickets]` from the latest server log.
 
+### Symmetric `peer_tickets` when both run `serve`
+
+`lm-chat` only needs the **client** to know the **server** ticket (client dials the server). If **both** terminals run **`meshdevices … serve`**, the stack also runs **GossipSub** and **DHT**, which may **open outbound streams** to the other peer. An iroh dial to a peer without addresses in the peerstore needs that peer’s **NodeTicket** in **`[peer_tickets]`** on **this** side.
+
+So for two full nodes:
+
+- **Client** `client.toml`: `[peer_tickets]` must include **`"<SERVER_PEER_ID>" = "<server ticket>"`** (as in Phase 1).
+- **Server** `server.toml`: also add **`"<CLIENT_PEER_ID>" = "<client ticket>"`** from the client log line `iroh NodeTicket (for peer_tickets / dial-in): …`.
+
+If the server’s `[peer_tickets]` omits the client, you may see **`Failed to open stream`** / **`/meshsub/1.0.0`** or **`/ipfs/kad/1.0.0`** timeouts or noisy errors even when the client already reached `connected bootstrap`. Refresh tickets after restarts if dials fail.
+
 ### Scripts: server + client + logs
 
 From the repo root (with `server.toml` / `client.toml` already filled in):
@@ -56,11 +67,18 @@ Use two config files — copy from [`examples/server.local.example.toml`](../exa
 3. **Allowlist**
    - Stop server (Ctrl+C), add the client’s base58 PeerId to server `allow_peer_ids`, save, restart server, then restart client if needed.
 
+3b. **Both running `serve` (recommended for quieter logs)**  
+   After the client has printed its `iroh NodeTicket`, stop the server, add under **server** `[peer_tickets]`: `"<CLIENT_PEER_ID>" = "<CLIENT_TICKET>"`, save, restart **server** then **client** so both sides can dial each other for gossip/DHT.
+
 4. **LM proxy smoke**
    - With **server** still running (LM Studio up), in Terminal C:  
      `meshdevices --config client.toml lm-chat --peer <SERVER_PEER_ID> --prompt "Hello"`  
    - Or use the helper: [`scripts/test-lm-chat.sh`](../scripts/test-lm-chat.sh) —  
      `./scripts/test-lm-chat.sh --peer <SERVER_PEER_ID> [--config client.toml] [--prompt "Hello"]`  
+   - **Automated demo** (starts a temp server, runs two prompts, prints Q→A): [`scripts/demo-lm-chat.sh`](../scripts/demo-lm-chat.sh) —  
+     `./scripts/demo-lm-chat.sh` — optional env: `MODEL=…`, `LM_URL=…`, `PROMPT1`, `PROMPT2`.  
+     Large reasoning models can take **tens of seconds per prompt** with no stdout until the reply; the script prints **heartbeat lines on stderr** every 15s while waiting.  
+     Debug: `VERBOSE_DEMO=1 ./scripts/demo-lm-chat.sh` enables `-v` and **tees DEBUG lines to stderr** (your terminal) while still writing `server.log` and per-chat `*.err` under the temp workdir; use `KEEP_DEMO_WORKDIR=1` to inspect those files after exit.  
    - Expect JSON from LM Studio on stdout (or an error if the model/path is wrong).
 
 ## Phase 2 — Two machines (LAN)
@@ -87,6 +105,10 @@ Same as Phase 1, but:
 - **`No supported (IPv4+TCP or IPv6+TCP) addresses` / bootstrap noise:** Older meshdevices passed `bootstrap` into py-libp2p’s TCP-only `BootstrapDiscovery`. Current code sets `bootstrap=None` on `BasicHost` and dials `/p2p/...` peers only via `connect_to_bootstrap_peers` + `IrohTransport` + `[peer_tickets]`. Update meshdevices and retry.
 
 - **`failed to negotiate the secure protocol`:** Often follows the above (no valid dial path). If it persists after a clean iroh dial, capture full logs with `meshdevices -v --config ...`.
+
+- **`Failed to open stream` … `/meshsub/1.0.0` or `/ipfs/kad/1.0.0` (timeout or `response='na'`):** With **two** `serve` processes, ensure **each** TOML’s `[peer_tickets]` includes the **other** peer’s NodeTicket (see **Symmetric `peer_tickets` when both run `serve`** above). `lm-chat`-only clients do not register those protocols, so some noise from the server is normal in that case.
+
+- **LM Studio logs “Generated prediction” but `lm-chat` / the demo never prints an answer:** Older builds used `httpx.AsyncClient` inside the iroh→trio bridge, which could **starve trio** so yamux never moved bytes. Current [`lm_proxy.py`](../src/meshdevices/lm_proxy.py) uses **sync `httpx` in `trio.to_thread.run_sync`** for the POST. Pull the latest meshdevices and retry.
 
 ## See also
 
