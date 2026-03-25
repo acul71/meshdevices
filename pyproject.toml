@@ -9,7 +9,8 @@ description = "Mesh Devices MVP: iroh transport + py-libp2p (DHT, GossipSub) wit
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "libp2p",
+    # 0.6+ provides libp2p.tools.anyio_service (older PyPI releases used async_service only).
+    "libp2p>=0.6.0",
     "iroh",
     "multiaddr",
     "trio",

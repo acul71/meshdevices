@@ -9,7 +9,7 @@ Replicate workflows where **one machine runs heavy work** (inference, builds, se
 ## MVP (Python)
 
 - **Stack:** [py-libp2p](https://github.com/libp2p/py-libp2p) (GossipSub, DHT, LM proxy) over an **iroh** Python transport (`IrohTransport`). Application concurrency is **trio**; **trio-asyncio** bridges iroh’s UniFFI layer (see [docs/mvp.md](docs/mvp.md)).
-- **Install:** `pip install -e ../py-libp2p` then `pip install -e .` from this repo (Python 3.11+).
+- **Install:** `pip install -e .` from this repo (Python 3.11+); requires **`libp2p>=0.6.0`** (older releases lack `libp2p.tools.anyio_service`). If you develop py-libp2p locally: `pip install -e ../py-libp2p` then `pip install -e .`.
 - **Run:** `meshdevices --config examples/allowlist.example.toml serve` (or omit `serve`). See [docs/network-test.md](docs/network-test.md) for LM Studio + two-node checks (`lm-chat`, tickets).
 
 ## Documentation
@@ -18,6 +18,7 @@ Replicate workflows where **one machine runs heavy work** (inference, builds, se
 | -------- | ----------- |
 | [docs/](docs/README.md) | Project documentation (overview, motivation, study plan) |
 | [docs/mvp.md](docs/mvp.md) | MVP architecture, trio + iroh bridge, runbook |
+| [docs/demo-lm-chat.md](docs/demo-lm-chat.md) | `demo-lm-chat.sh` usage + manual cross-device runbook |
 | [PROMPT.md](PROMPT.md) | Original brief, links, and raw context |
 
 Suggested path: [docs/overview.md](docs/overview.md) → [docs/study-resources.md](docs/study-resources.md).

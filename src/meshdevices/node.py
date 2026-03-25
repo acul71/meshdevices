@@ -8,24 +8,11 @@ from typing import TYPE_CHECKING
 import trio
 from libp2p import generate_new_ed25519_identity, generate_peer_id_from
 from libp2p.crypto.keys import KeyPair
-from libp2p.custom_types import TProtocol
-from libp2p.host.basic_host import BasicHost
-from libp2p.kad_dht.kad_dht import (
-    DHTMode,
-    KadDHT,
-)
-from libp2p.pubsub.gossipsub import GossipSub
-from libp2p.pubsub.pubsub import Pubsub
-from libp2p.tools.anyio_service import background_trio_service
 from libp2p.tools.utils import info_from_p2p_addr
 from multiaddr import Multiaddr
 
-from meshdevices.allowlist import PeerAllowlist
-from meshdevices.gossip_allowlist import gossip_allowlist_sync_validator
 from meshdevices.identity import ed25519_keypair_to_iroh_secret_bytes
 from meshdevices.iroh_loop import iroh_uniffi_loop
-from meshdevices.lm_proxy import register_lm_proxy_handler
-from meshdevices.swarm_builder import new_swarm_with_transport
 from meshdevices.transport import IrohTransport
 
 if TYPE_CHECKING:
@@ -33,10 +20,25 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-GOSSIPSUB_PROTOCOL_ID = TProtocol("/meshsub/1.0.0")
-
 
 async def mesh_run_forever(cfg: MeshConfig, *, key_pair: KeyPair | None = None) -> None:
+    # Heavy libp2p imports (KadDHT, GossipSub, anyio_service) live here so `print-ticket`
+    # and other light paths work even if an older libp2p is partially installed — upgrade
+    # to libp2p>=0.6.0 for full `serve`.
+    from libp2p.custom_types import TProtocol
+    from libp2p.host.basic_host import BasicHost
+    from libp2p.kad_dht.kad_dht import DHTMode, KadDHT
+    from libp2p.pubsub.gossipsub import GossipSub
+    from libp2p.pubsub.pubsub import Pubsub
+    from libp2p.tools.anyio_service import background_trio_service
+
+    from meshdevices.allowlist import PeerAllowlist
+    from meshdevices.gossip_allowlist import gossip_allowlist_sync_validator
+    from meshdevices.lm_proxy import register_lm_proxy_handler
+    from meshdevices.swarm_builder import new_swarm_with_transport
+
+    gossipsub_protocol_id = TProtocol("/meshsub/1.0.0")
+
     async with iroh_uniffi_loop():
         kp = key_pair or generate_new_ed25519_identity()
         sk = ed25519_keypair_to_iroh_secret_bytes(kp)
@@ -62,7 +64,7 @@ async def mesh_run_forever(cfg: MeshConfig, *, key_pair: KeyPair | None = None) 
         register_lm_proxy_handler(host, lm_base=cfg.lm_studio_base, allowlist=allow)
 
         gossipsub = GossipSub(
-            protocols=[GOSSIPSUB_PROTOCOL_ID],
+            protocols=[gossipsub_protocol_id],
             degree=3,
             degree_low=2,
             degree_high=4,

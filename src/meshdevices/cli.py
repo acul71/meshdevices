@@ -11,7 +11,6 @@ import trio
 
 from meshdevices.config import DEFAULT_LM_STUDIO_MODEL, load_config
 from meshdevices.identity_store import load_or_create_keypair, resolve_identity_key_path
-from meshdevices.lm_chat_client import peer_id_from_base58_cli, run_lm_chat
 from meshdevices.node import mesh_print_ticket, mesh_run_forever
 
 
@@ -85,6 +84,8 @@ def main() -> None:
     kp = _resolve_kp()
 
     if cmd == "lm-chat":
+        from meshdevices.lm_chat_client import peer_id_from_base58_cli, run_lm_chat
+
         try:
             peer_id_from_base58_cli(args.peer)
         except ValueError as e:
