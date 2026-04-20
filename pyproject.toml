@@ -16,6 +16,7 @@ dependencies = [
     "trio",
     "trio-asyncio>=0.15",
     "httpx",
+    "rich",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
 

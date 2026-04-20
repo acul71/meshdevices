@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -12,6 +13,70 @@ import trio
 from meshdevices.config import DEFAULT_LM_STUDIO_MODEL, load_config
 from meshdevices.identity_store import load_or_create_keypair, resolve_identity_key_path
 from meshdevices.node import mesh_print_ticket, mesh_run_forever
+
+
+def _extract_question_from_request(raw_request: bytes | None, fallback_prompt: str | None) -> str:
+    if raw_request:
+        try:
+            payload = json.loads(raw_request.decode("utf-8"))
+            msgs = payload.get("messages")
+            if isinstance(msgs, list):
+                for message in reversed(msgs):
+                    if isinstance(message, dict) and message.get("role") == "user":
+                        content = message.get("content")
+                        if isinstance(content, str) and content.strip():
+                            return content.strip()
+        except Exception:
+            pass
+    if fallback_prompt and fallback_prompt.strip():
+        return fallback_prompt.strip()
+    return "(unknown)"
+
+
+def _render_lm_chat_output(raw: bytes, *, question: str) -> None:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        # If backend returned non-JSON output, preserve behavior and print raw text.
+        text = raw.decode("utf-8", errors="replace")
+        print(text, end="" if text.endswith("\n") else "\n")
+        return
+
+    answer = ""
+    reasoning = ""
+    if isinstance(payload, dict):
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            first = choices[0]
+            if isinstance(first, dict):
+                message = first.get("message")
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        answer = content.strip()
+                    reason = message.get("reasoning_content")
+                    if isinstance(reason, str):
+                        reasoning = reason.strip()
+
+    if not reasoning:
+        reasoning = "_(not provided by model)_"
+    if not answer:
+        answer = "_(empty response)_"
+
+    md = (
+        f"# Question\n\n{question}\n\n"
+        f"# Reasoning\n\n{reasoning}\n\n"
+        f"# Answer\n\n{answer}\n"
+    )
+
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        Console().print(Markdown(md))
+    except Exception:
+        # Fallback keeps readable markdown if rich is unavailable.
+        print(md, end="" if md.endswith("\n") else "\n")
 
 
 def main() -> None:
@@ -31,9 +96,10 @@ def main() -> None:
     )
     parser.add_argument(
         "-v",
+        "--debug",
         "--verbose",
         action="store_true",
-        help="DEBUG logging",
+        help="Enable debug logs and raw lm-chat JSON output",
     )
     sub = parser.add_subparsers(dest="command", required=False, metavar="COMMAND")
     sub.add_parser("serve", help="Run mesh node (default if COMMAND omitted)")
@@ -68,12 +134,18 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    cmd = args.command or "serve"
+    if args.debug:
+        log_level = logging.DEBUG
+    elif cmd == "lm-chat":
+        log_level = logging.WARNING
+    else:
+        log_level = logging.INFO
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     cfg = load_config(args.config)
-    cmd = args.command or "serve"
 
     def _resolve_kp():
         p = resolve_identity_key_path(cfg, args.config)
@@ -105,9 +177,13 @@ def main() -> None:
             )
 
         raw = trio.run(_chat)
-        sys.stdout.buffer.write(raw)
-        if raw and not raw.endswith(b"\n"):
-            sys.stdout.buffer.write(b"\n")
+        if args.debug:
+            sys.stdout.buffer.write(raw)
+            if raw and not raw.endswith(b"\n"):
+                sys.stdout.buffer.write(b"\n")
+        else:
+            question = _extract_question_from_request(raw_request=body, fallback_prompt=args.prompt)
+            _render_lm_chat_output(raw, question=question)
         return
 
     if cmd == "print-ticket":
